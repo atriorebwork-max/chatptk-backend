@@ -1,0 +1,20 @@
+{
+  "lessons": [
+    {
+      "topic": "PTK",
+      "content": "Patthumthep Witthayakarn School"
+    },
+    {
+      "topic": "Atrio Rebosura",
+      "content": "My creator"
+    },
+    {
+      "topic": "if statement",
+      "content": "If statements allow decision making in programs."
+    },
+    {
+      "topic": "loops",
+      "content": "Loops repeat actions. Common loops are for and while loops."
+    }
+  ]
+}
