@@ -6,7 +6,7 @@ import json
 app = Flask(__name__)
 
 # ---------- GROQ CLIENT ----------
-client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+client = Groq(api_key=os.environ.get("PTK_API_K"))
 
 # ---------- LOAD KNOWLEDGE ----------
 with open("knowledge.json", "r", encoding="utf-8") as f:
@@ -76,3 +76,4 @@ def stream():
 # ---------- RUN ----------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
+
