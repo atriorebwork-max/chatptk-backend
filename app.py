@@ -50,7 +50,7 @@ def home():
 @app.route("/stream", methods=["POST"])
 def stream():
     data = request.get_json(silent=True) or {}
-    user_msg = data.get("message", "NO DATA").strip()
+    user_msg = data.get("message", "").strip()
 
     if not user_msg:
         return jsonify({"error": "Empty message"}), 400
@@ -111,6 +111,7 @@ def chat():
     return jsonify({
         "reply": response.choices[0].message.content
     })
+
 
 
 
