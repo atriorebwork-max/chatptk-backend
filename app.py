@@ -95,7 +95,7 @@ def chat():
 
     masked = marites(user_msg)
     if masked:
-        return jsonify({"reply": "NO DATA"})
+        return jsonify({"reply": masked})
 
     system_prompt = "You are ChatPTK, a friendly tutor."
 
@@ -111,6 +111,7 @@ def chat():
     return jsonify({
         "reply": response.choices[0].message.content
     })
+
 
 
 
