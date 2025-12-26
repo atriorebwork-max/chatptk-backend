@@ -1,10 +1,21 @@
 from flask import Flask, request, Response, render_template, jsonify
+from flask_cors import CORS
 from groq import Groq
 import json, os
 from aton_aton import marites
 
 app = Flask(__name__)
-
+CORS(
+    app,
+    resources={
+        r"/stream": {
+            "origins": [
+                "https://YOURDOMAIN.com",
+                "https://www.YOURDOMAIN.com"
+            ]
+        }
+    }
+)
 # ---------- GROQ CLIENT ----------
 GROQ_API_KEY = os.getenv("PTK_API_K")
 if not GROQ_API_KEY:
@@ -67,4 +78,5 @@ def stream():
 
 if __name__ == "__main__":
     app.run(debug=True)
+
 
