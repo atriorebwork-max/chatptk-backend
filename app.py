@@ -1,4 +1,4 @@
-from flask import Flask, request, Response
+from flask import Flask, request, jsonify, response
 from groq import Groq
 import os
 import json
@@ -71,13 +71,23 @@ def stream():
             if chunk.choices and chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content.encode("utf-8")
 
-    return Response(generate(), mimetype="text/plain")
+    return response(generate(), mimetype="text/plain")
 
 # ---------- RUN ----------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
 
 
+@app.route("/", methods=["GET"])
+def home():
+    return "ChatPTK backend is running 🚀"
+
 @app.route("/test", methods=["GET"])
 def test():
-    return {"status": "OK", "message": "Backend is alive 🚀"}
+    return jsonify({
+        "status": "OK",
+        "message": "Backend is alive 🚀"
+    })
+
+if __name__ == "__main__":
+    app.run(debug=True)
