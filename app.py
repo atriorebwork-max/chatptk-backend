@@ -57,27 +57,35 @@ def stream():
 
     masked = marites(user_msg)
     if masked:
-        return Response(masked, mimetype="text/plain")
+        return Response(masked, mimetype="text/plain; charset=utf-8")
 
     system_prompt = "You are ChatPTK, a friendly tutor."
 
     def generate():
-        stream = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_msg}
-            ],
-            stream=True
-        )
-        for chunk in stream:
-            if chunk.choices and chunk.choices[0].delta.content:
-                yield chunk.choices[0].delta.content
+        try:
+            stream = client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_msg}
+                ],
+                stream=True
+            )
+            for chunk in stream:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+        except Exception:
+            yield "⚠️ ChatPTK is busy. Please try again."
 
-    return Response(generate(), mimetype="text/plain")
+    return Response(
+        generate(),
+        mimetype="text/plain; charset=utf-8",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no"
+        }
+    )
 
-if __name__ == "__main__":
-    app.run(debug=True)
 
 
 
