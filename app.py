@@ -10,8 +10,8 @@ CORS(
     resources={
         r"/stream": {
             "origins": [
-                "https://YOURDOMAIN.com",
-                "https://www.YOURDOMAIN.com"
+                "https://ptkaizone.com",
+                "https://www.ptkaizone.com"
             ]
         }
     }
@@ -78,5 +78,6 @@ def stream():
 
 if __name__ == "__main__":
     app.run(debug=True)
+
 
 
