@@ -1,15 +1,10 @@
-from flask import Flask, request, Response, jsonify
+from flask import Flask, request, Response, render_template, jsonify
 from flask_cors import CORS
-from flask_sqlalchemy import SQLAlchemy
 from groq import Groq
 import json, os
 from aton_aton import marites
 
-# ------------------
-# APP SETUP
-# ------------------
 app = Flask(__name__)
-
 CORS(
     app,
     resources={
@@ -23,71 +18,37 @@ CORS(
     }
 )
 
-# ------------------
-# DATABASE CONFIG
-# ------------------
-# Set this in your hosting ENV:
-# DATABASE_URL=mysql+pymysql://dbuser:password@localhost/zyntlszw_PTK_DB
-
-app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL")
-app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-
-db = SQLAlchemy(app)
-
-# ------------------
-# DATABASE MODEL
-# ------------------
-class User(db.Model):
-    __tablename__ = "users"
-
-    id = db.Column(db.Integer, primary_key=True)
-    F_Name = db.Column(db.String(255))
-    L_Name = db.Column(db.String(250))
-    s_ID = db.Column(db.String(255), unique=True)
-    S_Balance = db.Column(db.Integer)
-
-# ------------------
-# GROQ CLIENT
-# ------------------
+# ---------- GROQ CLIENT ----------
 GROQ_API_KEY = os.getenv("PTK_API_K")
 if not GROQ_API_KEY:
     raise RuntimeError("PTK_API_K not set")
 
 client = Groq(api_key=GROQ_API_KEY)
 
-# ------------------
-# LOAD KNOWLEDGE
-# ------------------
+# ---------- LOAD KNOWLEDGE ----------
 try:
     with open("knowledge.json", "r", encoding="utf-8") as f:
         KNOWLEDGE = json.load(f)["lessons"]
 except Exception:
     KNOWLEDGE = []
 
-# ------------------
-# ROUTES
-# ------------------
+# ---------- FIND RELEVANT KNOWLEDGE ----------
+def get_relevant_knowledge(user_msg):
+    user_msg = user_msg.lower()
+    matches = []
+
+    for item in KNOWLEDGE:
+        topic = item["topic"].lower()
+        if topic in user_msg:
+            matches.append(f"{item['topic']}: {item['content']}")
+
+    return "\n".join(matches)
+
+# ---------- ROUTES ----------
 @app.route("/")
 def home():
-    return "ChatPTK backend with DB is running 🚀"
+    return "ChatPTK backend is running 🚀"
 
-# 🔹 DB TEST ROUTE (IMPORTANT)
-@app.route("/test-db")
-def test_db():
-    user = User.query.first()
-    if not user:
-        return jsonify({"error": "No users found"})
-
-    return jsonify({
-        "first_name": user.F_Name,
-        "last_name": user.L_Name,
-        "student_id": user.s_ID,
-        "balance": user.S_Balance
-    })
-
-# ------------------
-# STREAM CHAT
-# ------------------
 @app.route("/stream", methods=["POST"])
 def stream():
     data = request.get_json(silent=True) or {}
@@ -126,10 +87,6 @@ def stream():
             "X-Accel-Buffering": "no"
         }
     )
-
-# ------------------
-# NORMAL CHAT
-# ------------------
 @app.route("/chat", methods=["POST"])
 def chat():
     data = request.get_json(silent=True) or {}
@@ -156,3 +113,15 @@ def chat():
     return jsonify({
         "reply": response.choices[0].message.content
     })
+
+
+
+
+
+
+
+
+
+
+
+
