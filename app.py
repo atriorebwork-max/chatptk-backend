@@ -10,13 +10,14 @@ CORS(
     resources={
         r"/stream": {
             "origins": [
-                "https://ptkaizone.com/",
-                "https://www.ptkaizone.com/"
-                "https://z259914-y016nt.ls03.zwhhosting.com/"
+                "https://ptkaizone.com",
+                "https://www.ptkaizone.com",
+                "https://z259914-y016nt.ls03.zwhhosting.com"
             ]
         }
     }
 )
+
 # ---------- GROQ CLIENT ----------
 GROQ_API_KEY = os.getenv("PTK_API_K")
 if not GROQ_API_KEY:
@@ -112,6 +113,7 @@ def chat():
     return jsonify({
         "reply": response.choices[0].message.content
     })
+
 
 
 
