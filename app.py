@@ -10,8 +10,8 @@ CORS(
     resources={
         r"/stream": {
             "origins": [
-                "https://ptkaizone.com",
-                "https://www.ptkaizone.com"
+                "https://z259914-y016nt.ls03.zwhhosting.com/",
+                "https://z259914-y016nt.ls03.zwhhosting.com/"
             ]
         }
     }
@@ -111,6 +111,7 @@ def chat():
     return jsonify({
         "reply": response.choices[0].message.content
     })
+
 
 
 
