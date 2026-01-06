@@ -1,15 +1,10 @@
 from flask import Flask, request, Response, jsonify
 from flask_cors import CORS
-from flask_sqlalchemy import SQLAlchemy
 from groq import Groq
 import json, os
 from aton_aton import marites
 
-# ------------------
-# APP SETUP
-# ------------------
 app = Flask(__name__)
-
 CORS(
     app,
     resources={
@@ -22,29 +17,6 @@ CORS(
         }
     }
 )
-
-# ------------------
-# DATABASE CONFIG
-# ------------------
-# Set this in your hosting ENV:
-# DATABASE_URL=mysql+pymysql://dbuser:password@localhost/zyntlszw_PTK_DB
-
-app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL")
-app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-
-db = SQLAlchemy(app)
-
-# ------------------
-# DATABASE MODEL
-# ------------------
-class User(db.Model):
-    __tablename__ = "users"
-
-    id = db.Column(db.Integer, primary_key=True)
-    F_Name = db.Column(db.String(255))
-    L_Name = db.Column(db.String(250))
-    s_ID = db.Column(db.String(255), unique=True)
-    S_Balance = db.Column(db.Integer)
 
 # ------------------
 # GROQ CLIENT
@@ -65,25 +37,29 @@ except Exception:
     KNOWLEDGE = []
 
 # ------------------
+# LOAD STUDENTS (JSON)
+# ------------------
+try:
+    with open("students.json", "r", encoding="utf-8") as f:
+        STUDENTS = json.load(f)["students"]
+except Exception:
+    STUDENTS = []
+
+# ------------------
+# HELPER: FIND STUDENT
+# ------------------
+def get_student(student_id):
+    for s in STUDENTS:
+        if s["student_id"] == student_id:
+            return s
+    return None
+
+# ------------------
 # ROUTES
 # ------------------
 @app.route("/")
 def home():
-    return "ChatPTK backend with DB is running 🚀"
-
-# 🔹 DB TEST ROUTE (IMPORTANT)
-@app.route("/test-db")
-def test_db():
-    user = User.query.first()
-    if not user:
-        return jsonify({"error": "No users found"})
-
-    return jsonify({
-        "first_name": user.F_Name,
-        "last_name": user.L_Name,
-        "student_id": user.s_ID,
-        "balance": user.S_Balance
-    })
+    return "ChatPTK backend (JSON mode) is running 🚀"
 
 # ------------------
 # STREAM CHAT
@@ -100,6 +76,22 @@ def stream():
     if masked:
         return Response(masked, mimetype="text/plain; charset=utf-8")
 
+    # 🔐 TEMP: HARD-CODE STUDENT (FOR DEMO)
+    student_id = "STU001"
+    student = get_student(student_id)
+
+    # 🎯 INTERCEPT STUDENT QUESTIONS
+    msg_lower = user_msg.lower()
+
+    if student and "balance" in msg_lower:
+        reply = f"Your current balance is ₱{student['balance']}."
+        return Response(reply, mimetype="text/plain; charset=utf-8")
+
+    if student and "name" in msg_lower:
+        reply = f"You are {student['first_name']} {student['last_name']}."
+        return Response(reply, mimetype="text/plain; charset=utf-8")
+
+    # 🤖 FALLBACK TO AI
     system_prompt = "You are ChatPTK, a friendly tutor."
 
     def generate():
@@ -128,7 +120,7 @@ def stream():
     )
 
 # ------------------
-# NORMAL CHAT
+# NORMAL CHAT (NON-STREAM)
 # ------------------
 @app.route("/chat", methods=["POST"])
 def chat():
@@ -142,6 +134,23 @@ def chat():
     if masked:
         return jsonify({"reply": masked})
 
+    # 🔐 TEMP STUDENT
+    student_id = "STU001"
+    student = get_student(student_id)
+
+    msg_lower = user_msg.lower()
+
+    if student and "balance" in msg_lower:
+        return jsonify({
+            "reply": f"Your current balance is ₱{student['balance']}."
+        })
+
+    if student and "name" in msg_lower:
+        return jsonify({
+            "reply": f"You are {student['first_name']} {student['last_name']}."
+        })
+
+    # 🤖 AI fallback
     system_prompt = "You are ChatPTK, a friendly tutor."
 
     response = client.chat.completions.create(
@@ -156,4 +165,3 @@ def chat():
     return jsonify({
         "reply": response.choices[0].message.content
     })
-
