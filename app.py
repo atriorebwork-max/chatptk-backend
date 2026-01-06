@@ -21,7 +21,7 @@ CORS(
 # ------------------
 # GROQ CLIENT
 # ------------------
-GROQ_API_KEY = os.getenv("PTK_API_K")
+GROQ_API_KEY = os.getenv("PTK_API_KK")
 if not GROQ_API_KEY:
     raise RuntimeError("PTK_API_K not set")
 
@@ -165,3 +165,4 @@ def chat():
     return jsonify({
         "reply": response.choices[0].message.content
     })
+
