@@ -1,0 +1,16 @@
+{
+  "students": [
+    {
+      "student_id": "STU001",
+      "first_name": "Juan",
+      "last_name": "Dela Cruz",
+      "balance": 3500
+    },
+    {
+      "student_id": "STU002",
+      "first_name": "Maria",
+      "last_name": "Santos",
+      "balance": 1200
+    }
+  ]
+}
