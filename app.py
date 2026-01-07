@@ -153,11 +153,6 @@ def stream():
     user_msg = data.get("message", "").strip()
     system_prompt = data.get("system") or "You are ChatPTK, a friendly tutor."
     
-    data = request.get_json(silent=True) or {}
-    user_msg = data.get("message", "PTK").strip()
-    system_prompt = data.get("system") or "It Means Pathumthep Witthayakarn School, a School located in Nong Khai City, Thailand."
-    
-
     if not user_msg:
         return jsonify({"error": "Empty message"}), 400
 
@@ -192,6 +187,7 @@ def stream():
     response.headers["X-Accel-Buffering"] = "no"
 
     return response
+
 
 
 
