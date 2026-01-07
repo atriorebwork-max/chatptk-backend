@@ -1,11 +1,18 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from groq import Groq
-import json, os
 from aton_aton import marites
 
+import json
+import os
+
+
+# ------------------
+# APP SETUP
+# ------------------
 app = Flask(__name__)
 CORS(app)
+
 
 # ------------------
 # GROQ CLIENT
@@ -16,20 +23,23 @@ if not GROQ_API_KEY:
 
 client = Groq(api_key=GROQ_API_KEY)
 
+
 # ------------------
 # LOAD STUDENTS
 # ------------------
 try:
     with open("students.json", "r", encoding="utf-8") as f:
-        STUDENTS = json.load(f)["students"]
+        STUDENTS = json.load(f).get("students", [])
 except Exception:
     STUDENTS = []
 
-def get_student(student_id):
-    for s in STUDENTS:
-        if s["student_id"] == student_id:
-            return s
+
+def get_student(student_id: str):
+    for student in STUDENTS:
+        if student.get("student_id") == student_id:
+            return student
     return None
+
 
 # ------------------
 # ENGLISH TUTOR PROMPTS
@@ -42,97 +52,77 @@ Ask questions step by step.
 """
 
 TUTOR_MODES = {
-    "grammar": """
-Generate ONE grammar question for the student right now.
-Use multiple choice or fill-in-the-blank.
-Do NOT give the answer immediately.
-Keep it short and clear.
+    "menu": """
+First, ask the student to choose one activity:
+1. Grammar practice
+2. Vocabulary
+3. Sentence correction
+4. Conversation practice
+
+Only ask this question. Do not explain yet.
 """,
-    "vocabulary": """
-Generate ONE vocabulary question for the student right now.
-Include example sentence if needed.
-Do NOT give the answer immediately.
-Keep it short and clear.
-""",
-    "sentence": """
-Ask the student to correct ONE incorrect sentence.
-Do NOT give the answer immediately.
-Keep it short and clear.
-""",
-    "conversation": """
-Start a simple English conversation.
-Ask ONE question to the student.
-Do NOT give multiple questions yet.
-Keep it friendly and clear.
-"""
+    "grammar": "Focus on grammar questions. Use multiple choice or fill-in-the-blank.",
+    "vocabulary": "Ask vocabulary questions and usage in sentences.",
+    "sentence": "Ask the student to correct incorrect sentences.",
+    "conversation": "Start a simple English conversation and ask follow-up questions.",
 }
+
 
 # ------------------
 # ROUTES
+# ------------------
+@app.route("/")
+def home():
+    return "ChatPTK English Tutor is running 🚀"
+
+
+# ------------------
+# CHAT (MAIN)
 # ------------------
 @app.route("/chat", methods=["POST"])
 def chat():
     data = request.get_json(silent=True) or {}
 
-    # ------------------
-    # EXTRACT DATA
-    # ------------------
     user_msg = data.get("message", "").strip()
-    tutor_mode = data.get("mode", "menu")  # default = menu
-    student_id = data.get("student_id", "STU001")  # demo mode
+    tutor_mode = data.get("mode", "menu")  # default = question-first
+    student_id = "STU001"  # demo mode
+
+    if not user_msg and tutor_mode != "menu":
+        return jsonify({"error": "Empty message"}), 400
 
     student = get_student(student_id)
 
-    # ------------------
-    # STUDENT INFO RESPONSES
-    # ------------------
+    # 🔐 Student-based responses
     if student and user_msg:
         msg_lower = user_msg.lower()
-        if "balance" in msg_lower:
-            return jsonify({"reply": f"Your current balance is ₱{student['balance']}."})
-        if "name" in msg_lower:
-            return jsonify({"reply": f"You are {student['first_name']} {student['last_name']}."})
 
-    # ------------------
-    # CONTENT FILTER
-    # ------------------
+        if "balance" in msg_lower:
+            return jsonify({
+                "reply": f"Your current balance is ₱{student['balance']}."
+            })
+
+        if "name" in msg_lower:
+            return jsonify({
+                "reply": f"You are {student['first_name']} {student['last_name']}."
+            })
+
+    # 🛡️ Content filter
     masked = marites(user_msg)
     if masked:
         return jsonify({"reply": masked})
 
-    # ------------------
-    # MENU MODE
-    # ------------------
-    if tutor_mode == "menu":
-        return jsonify({
-            "reply": "Please choose one activity:\n1. Grammar practice\n2. Vocabulary\n3. Sentence correction\n4. Conversation practice"
-        })
-
-    # ------------------
-    # HANDLE EMPTY USER MESSAGE
-    # ------------------
-    # If switching from menu → activity and no user input yet,
-    # send a placeholder so AI knows to generate a question immediately
-    if not user_msg:
-        user_msg = "Student wants to start the activity."
-
-    # ------------------
-    # AI PROMPT
-    # ------------------
+    # 🧠 Build system prompt
     system_prompt = BASE_TUTOR_PROMPT + TUTOR_MODES.get(tutor_mode, "")
+    messages = [{"role": "system", "content": system_prompt}]
 
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_msg}
-    ]
+    if tutor_mode != "menu":
+        messages.append({"role": "user", "content": user_msg})
 
-    # ------------------
-    # AI RESPONSE
-    # ------------------
+    # 🤖 AI response
     response = client.chat.completions.create(
         model="llama-3.1-8b-instant",
         messages=messages,
-        temperature=0.4
+        temperature=0.4,
     )
 
     return jsonify({
