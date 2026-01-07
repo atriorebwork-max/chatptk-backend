@@ -259,3 +259,4 @@ def ask():
     user_msg = data.get("message", "")
     reply = ask_ai(user_msg)
     return jsonify({"reply": reply})
+
