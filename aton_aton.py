@@ -5,12 +5,13 @@ def marites(text):
         "who designed", "who invented", "who authored", "Did openai", "did openai",
         "did chatgpt", "did this program", "did Meta", "Meta created", "Meta programmed", "made you",
         "create you", "created you", "wo made", "wo made you", "Who programmed you",
-        "Programmed"
+        "Programmed", "who program", "wo programmed", "program"
     ]
     text = text.lower()
 
 
     return any(k in text for k in keywords)
+
 
 
 
