@@ -92,5 +92,14 @@ def chat():
     return jsonify({
         "reply": response.choices[0].message.content
     })
+@app.route("/stream", methods=["POST", "OPTIONS"])
+def stream():
+    if request.method == "OPTIONS":
+        response = make_response()
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+        response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+        return response, 200
+
 
 
