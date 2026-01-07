@@ -1,18 +1,11 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, Response, jsonify
 from flask_cors import CORS
 from groq import Groq
+import json, os
 from aton_aton import marites
 
-import json
-import os
-
-
-# ------------------
-# APP SETUP
-# ------------------
 app = Flask(__name__)
 CORS(app)
-
 
 # ------------------
 # GROQ CLIENT
@@ -23,23 +16,20 @@ if not GROQ_API_KEY:
 
 client = Groq(api_key=GROQ_API_KEY)
 
-
 # ------------------
 # LOAD STUDENTS
 # ------------------
 try:
     with open("students.json", "r", encoding="utf-8") as f:
-        STUDENTS = json.load(f).get("students", [])
+        STUDENTS = json.load(f)["students"]
 except Exception:
     STUDENTS = []
 
-
-def get_student(student_id: str):
-    for student in STUDENTS:
-        if student.get("student_id") == student_id:
-            return student
+def get_student(student_id):
+    for s in STUDENTS:
+        if s["student_id"] == student_id:
+            return s
     return None
-
 
 # ------------------
 # ENGLISH TUTOR PROMPTS
@@ -64,9 +54,8 @@ Only ask this question. Do not explain yet.
     "grammar": "Focus on grammar questions. Use multiple choice or fill-in-the-blank.",
     "vocabulary": "Ask vocabulary questions and usage in sentences.",
     "sentence": "Ask the student to correct incorrect sentences.",
-    "conversation": "Start a simple English conversation and ask follow-up questions.",
+    "conversation": "Start a simple English conversation and ask follow-up questions."
 }
-
 
 # ------------------
 # ROUTES
@@ -74,7 +63,6 @@ Only ask this question. Do not explain yet.
 @app.route("/")
 def home():
     return "ChatPTK English Tutor is running 🚀"
-
 
 # ------------------
 # CHAT (MAIN)
@@ -92,37 +80,32 @@ def chat():
 
     student = get_student(student_id)
 
-    # 🔐 Student-based responses
+    # 🔐 Student-based responses (example)
     if student and user_msg:
         msg_lower = user_msg.lower()
-
         if "balance" in msg_lower:
-            return jsonify({
-                "reply": f"Your current balance is ₱{student['balance']}."
-            })
-
+            return jsonify({"reply": f"Your current balance is ₱{student['balance']}."})
         if "name" in msg_lower:
-            return jsonify({
-                "reply": f"You are {student['first_name']} {student['last_name']}."
-            })
+            return jsonify({"reply": f"You are {student['first_name']} {student['last_name']}."})
 
     # 🛡️ Content filter
     masked = marites(user_msg)
     if masked:
         return jsonify({"reply": masked})
 
-    # 🧠 Build system prompt
+    # 🧠 BUILD SYSTEM PROMPT
     system_prompt = BASE_TUTOR_PROMPT + TUTOR_MODES.get(tutor_mode, "")
+
     messages = [{"role": "system", "content": system_prompt}]
 
     if tutor_mode != "menu":
         messages.append({"role": "user", "content": user_msg})
 
-    # 🤖 AI response
+    # 🤖 AI RESPONSE
     response = client.chat.completions.create(
         model="llama-3.1-8b-instant",
         messages=messages,
-        temperature=0.4,
+        temperature=0.4
     )
 
     return jsonify({
