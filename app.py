@@ -107,10 +107,17 @@ def chat():
 # ------------------
 @app.route("/stream", methods=["POST", "OPTIONS"])
 def stream():
-    # ✅ PRE-FLIGHT (VERY IMPORTANT)
+    # ✅ HANDLE PREFLIGHT FIRST
     if request.method == "OPTIONS":
-        return make_response("", 200)
+        response = make_response("", 200)
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+        response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+        return response
 
+    # -------------------------
+    # REAL POST REQUEST
+    # -------------------------
     data = request.get_json(silent=True) or {}
     user_msg = data.get("message", "").strip()
     system_prompt = data.get("system") or "You are ChatPTK, a friendly tutor."
@@ -138,11 +145,14 @@ def stream():
         except Exception:
             yield "⚠️ ChatPTK is busy. Please try again."
 
-    return Response(
+    response = Response(
         generate(),
-        mimetype="text/plain; charset=utf-8",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no"
-        }
+        mimetype="text/plain; charset=utf-8"
     )
+
+    # ✅ ATTACH CORS HEADERS TO STREAM RESPONSE
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Cache-Control"] = "no-cache"
+    response.headers["X-Accel-Buffering"] = "no"
+
+    return response
