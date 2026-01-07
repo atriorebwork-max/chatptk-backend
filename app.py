@@ -241,6 +241,23 @@ def ask_ai(user_msg):
         return "I was programmed by the Students of Mr. Atrio, He guided them to develop me."
 
 
+# =================================================
+# ROUTES
+# =================================================
+
+@app.route("/")
+def home():
+    return render_template("index.html")
+
+
+@app.route("/ask", methods=["POST"])
+def ask():
+    data = request.get_json()
+    user_msg = data.get("message", "")
+    reply = ask_ai(user_msg)
+    return jsonify({"reply": reply})
+
+
 
 
 
