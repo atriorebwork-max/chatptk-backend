@@ -102,36 +102,50 @@ RULES:
 @app.route("/")
 def home():
     return "ChatPTK English Tutor backend is running 🚀"
+@app.route("/chat", methods=["POST"])
+def chat():
+    data = request.get_json() or {}
+    user_msg = data.get("message", "")
+    system = data.get("system")
+
+    # 🔹 Tutor triggers
+    if user_msg.startswith("START_"):
+        mode = user_msg.replace("START_", "").lower()
+
+        tutor_prompt = BASE_TUTOR_PROMPT + TUTOR_MODES.get(mode, "")
+        user_msg = "Start the lesson now."
+
+        system = tutor_prompt
 
 # ------------------
 # CHAT (NON-STREAM)
 # ------------------
-@app.route("/chat", methods=["POST"])
-def chat():
-    data = request.get_json(silent=True) or {}
+#@app.route("/chat", methods=["POST"])
+#def chat():
+ #   data = request.get_json(silent=True) or {}
 
-    user_msg = data.get("message", "").strip()
-    system_prompt = data.get("system") or "You are ChatPTK, a friendly tutor."
+  #  user_msg = data.get("message", "").strip()
+   # system_prompt = data.get("system") or "You are ChatPTK, a friendly tutor."
 
-    if not user_msg:
-        return jsonify({"error": "Empty message"}), 400
+    #if not user_msg:
+     #   return jsonify({"error": "Empty message"}), 400
 
-    masked = marites(user_msg)
-    if masked:
-        return jsonify({"reply": masked})
+    #masked = marites(user_msg)
+    #if masked:
+    #    return jsonify({"reply": masked})
 
-    response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_msg}
-        ],
-        temperature=0.4
-    )
+    #response = client.chat.completions.create(
+        #model="llama-3.1-8b-instant",
+        #messages=[
+            #{"role": "system", "content": system_prompt},
+  #          {"role": "user", "content": user_msg}
+        #],
+        #temperature=0.4
+    #)
 
-    return jsonify({
-        "reply": response.choices[0].message.content
-    })
+    #return jsonify({
+    #    "reply": response.choices[0].message.content
+    #})
 
 # ------------------
 # STREAM CHAT (CORS FIXED)
@@ -187,4 +201,5 @@ def stream():
     response.headers["X-Accel-Buffering"] = "no"
 
     return response
+
 
