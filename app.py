@@ -42,10 +42,29 @@ Ask questions step by step.
 """
 
 TUTOR_MODES = {
-    "grammar": "Focus on grammar questions. Use multiple choice or fill-in-the-blank.",
-    "vocabulary": "Ask vocabulary questions and usage in sentences.",
-    "sentence": "Ask the student to correct incorrect sentences.",
-    "conversation": "Start a simple English conversation and ask follow-up questions."
+    "grammar": """
+Generate ONE grammar question for the student right now.
+Use multiple choice or fill-in-the-blank.
+Do NOT give the answer immediately.
+Keep it short and clear.
+""",
+    "vocabulary": """
+Generate ONE vocabulary question for the student right now.
+Include example sentence if needed.
+Do NOT give the answer immediately.
+Keep it short and clear.
+""",
+    "sentence": """
+Ask the student to correct ONE incorrect sentence.
+Do NOT give the answer immediately.
+Keep it short and clear.
+""",
+    "conversation": """
+Start a simple English conversation.
+Ask ONE question to the student.
+Do NOT give multiple questions yet.
+Keep it friendly and clear.
+"""
 }
 
 # ------------------
