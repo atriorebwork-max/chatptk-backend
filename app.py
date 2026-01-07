@@ -158,7 +158,7 @@ def stream():
 
     masked = marites(user_msg)
     if masked:
-        return Response(masked, mimetype="text/plain")
+        return Response(masked, mimetype="PTK STUDENTS")
 
     def generate():
         try:
@@ -187,6 +187,7 @@ def stream():
     response.headers["X-Accel-Buffering"] = "no"
 
     return response
+
 
 
 
