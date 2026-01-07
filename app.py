@@ -5,18 +5,7 @@ import json, os
 from aton_aton import marites
 
 app = Flask(__name__)
-CORS(
-    app,
-    resources={
-        r"/stream": {
-            "origins": [
-                "https://ptkaizone.com",
-                "https://www.ptkaizone.com",
-                "https://z259914-y016nt.ls03.zwhhosting.com"
-            ]
-        }
-    }
-)
+CORS(app)
 
 # ------------------
 # GROQ CLIENT
@@ -28,16 +17,7 @@ if not GROQ_API_KEY:
 client = Groq(api_key=GROQ_API_KEY)
 
 # ------------------
-# LOAD KNOWLEDGE
-# ------------------
-try:
-    with open("knowledge.json", "r", encoding="utf-8") as f:
-        KNOWLEDGE = json.load(f)["lessons"]
-except Exception:
-    KNOWLEDGE = []
-
-# ------------------
-# LOAD STUDENTS (JSON)
+# LOAD STUDENTS
 # ------------------
 try:
     with open("students.json", "r", encoding="utf-8") as f:
@@ -45,9 +25,6 @@ try:
 except Exception:
     STUDENTS = []
 
-# ------------------
-# HELPER: FIND STUDENT
-# ------------------
 def get_student(student_id):
     for s in STUDENTS:
         if s["student_id"] == student_id:
@@ -55,115 +32,82 @@ def get_student(student_id):
     return None
 
 # ------------------
+# ENGLISH TUTOR PROMPTS
+# ------------------
+BASE_TUTOR_PROMPT = """
+You are an English tutor for Grade 9 students.
+Be friendly, clear, and encouraging.
+Do NOT give long lectures.
+Ask questions step by step.
+"""
+
+TUTOR_MODES = {
+    "menu": """
+First, ask the student to choose one activity:
+1. Grammar practice
+2. Vocabulary
+3. Sentence correction
+4. Conversation practice
+
+Only ask this question. Do not explain yet.
+""",
+    "grammar": "Focus on grammar questions. Use multiple choice or fill-in-the-blank.",
+    "vocabulary": "Ask vocabulary questions and usage in sentences.",
+    "sentence": "Ask the student to correct incorrect sentences.",
+    "conversation": "Start a simple English conversation and ask follow-up questions."
+}
+
+# ------------------
 # ROUTES
 # ------------------
 @app.route("/")
 def home():
-    return "ChatPTK backend (JSON mode) is running 🚀"
+    return "ChatPTK English Tutor is running 🚀"
 
 # ------------------
-# STREAM CHAT
-# ------------------
-@app.route("/stream", methods=["POST"])
-def stream():
-    data = request.get_json(silent=True) or {}
-    user_msg = data.get("message", "").strip()
-
-    if not user_msg:
-        return jsonify({"error": "Empty message"}), 400
-
-    masked = marites(user_msg)
-    if masked:
-        return Response(masked, mimetype="text/plain; charset=utf-8")
-
-    # 🔐 TEMP: HARD-CODE STUDENT (FOR DEMO)
-    student_id = "STU001"
-    student = get_student(student_id)
-
-    # 🎯 INTERCEPT STUDENT QUESTIONS
-    msg_lower = user_msg.lower()
-
-    if student and "balance" in msg_lower:
-        reply = f"Your current balance is ₱{student['balance']}."
-        return Response(reply, mimetype="text/plain; charset=utf-8")
-
-    if student and "name" in msg_lower:
-        reply = f"You are {student['first_name']} {student['last_name']}."
-        return Response(reply, mimetype="text/plain; charset=utf-8")
-
-    # 🤖 FALLBACK TO AI
-    system_prompt = "You are ChatPTK, a friendly tutor."
-
-    def generate():
-        try:
-            stream = client.chat.completions.create(
-                model="llama-3.1-8b-instant",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_msg}
-                ],
-                stream=True
-            )
-            for chunk in stream:
-                if chunk.choices and chunk.choices[0].delta.content:
-                    yield chunk.choices[0].delta.content
-        except Exception:
-            yield "⚠️ ChatPTK is busy. Please try again."
-
-    return Response(
-        generate(),
-        mimetype="text/plain; charset=utf-8",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no"
-        }
-    )
-
-# ------------------
-# NORMAL CHAT (NON-STREAM)
+# CHAT (MAIN)
 # ------------------
 @app.route("/chat", methods=["POST"])
 def chat():
     data = request.get_json(silent=True) or {}
-    user_msg = data.get("message", "").strip()
 
-    if not user_msg:
+    user_msg = data.get("message", "").strip()
+    tutor_mode = data.get("mode", "menu")  # default = question-first
+    student_id = "STU001"  # demo mode
+
+    if not user_msg and tutor_mode != "menu":
         return jsonify({"error": "Empty message"}), 400
 
+    student = get_student(student_id)
+
+    # 🔐 Student-based responses (example)
+    if student and user_msg:
+        msg_lower = user_msg.lower()
+        if "balance" in msg_lower:
+            return jsonify({"reply": f"Your current balance is ₱{student['balance']}."})
+        if "name" in msg_lower:
+            return jsonify({"reply": f"You are {student['first_name']} {student['last_name']}."})
+
+    # 🛡️ Content filter
     masked = marites(user_msg)
     if masked:
         return jsonify({"reply": masked})
 
-    # 🔐 TEMP STUDENT
-    student_id = "STU001"
-    student = get_student(student_id)
+    # 🧠 BUILD SYSTEM PROMPT
+    system_prompt = BASE_TUTOR_PROMPT + TUTOR_MODES.get(tutor_mode, "")
 
-    msg_lower = user_msg.lower()
+    messages = [{"role": "system", "content": system_prompt}]
 
-    if student and "balance" in msg_lower:
-        return jsonify({
-            "reply": f"Your current balance is ₱{student['balance']}."
-        })
+    if tutor_mode != "menu":
+        messages.append({"role": "user", "content": user_msg})
 
-    if student and "name" in msg_lower:
-        return jsonify({
-            "reply": f"You are {student['first_name']} {student['last_name']}."
-        })
-
-    # 🤖 AI fallback
-    system_prompt = "You are ChatPTK, a friendly tutor."
-
+    # 🤖 AI RESPONSE
     response = client.chat.completions.create(
         model="llama-3.1-8b-instant",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_msg}
-        ],
+        messages=messages,
         temperature=0.4
     )
 
     return jsonify({
         "reply": response.choices[0].message.content
     })
-
-
