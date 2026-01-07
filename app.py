@@ -70,17 +70,13 @@ def home():
 @app.route("/chat", methods=["POST"])
 def chat():
     data = request.get_json(silent=True) or {}
-
     user_msg = data.get("message", "").strip()
-    tutor_mode = data.get("mode", "menu")  # default = question-first
+    tutor_mode = data.get("mode", "menu")
     student_id = "STU001"  # demo mode
-
-    if not user_msg and tutor_mode != "menu":
-        return jsonify({"error": "Empty message"}), 400
 
     student = get_student(student_id)
 
-    # 🔐 Student-based responses (example)
+    # Student-based quick responses
     if student and user_msg:
         msg_lower = user_msg.lower()
         if "balance" in msg_lower:
@@ -88,26 +84,37 @@ def chat():
         if "name" in msg_lower:
             return jsonify({"reply": f"You are {student['first_name']} {student['last_name']}."})
 
-    # 🛡️ Content filter
+    # Content filter
     masked = marites(user_msg)
     if masked:
         return jsonify({"reply": masked})
 
-    # 🧠 BUILD SYSTEM PROMPT
+    # Build system prompt
     system_prompt = BASE_TUTOR_PROMPT + TUTOR_MODES.get(tutor_mode, "")
-
     messages = [{"role": "system", "content": system_prompt}]
 
-    if tutor_mode != "menu":
-        messages.append({"role": "user", "content": user_msg})
+    # Always append user message unless in menu mode
+    if tutor_mode != "menu" or user_msg:
+        messages.append({"role": "user", "content": user_msg or "Start the lesson, please."})
 
-    # 🤖 AI RESPONSE
-    response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
-        messages=messages,
-        temperature=0.4
-    )
+    # AI response with error handling
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=messages,
+            temperature=0.4
+        )
+        # Safe extraction
+        ai_reply = ""
+        if hasattr(response.choices[0].message, "content"):
+            ai_reply = response.choices[0].message.content
+        elif isinstance(response.choices[0], dict) and "message" in response.choices[0]:
+            ai_reply = response.choices[0]["message"]["content"]
+        else:
+            ai_reply = str(response)
 
-    return jsonify({
-        "reply": response.choices[0].message.content
-    })
+        return jsonify({"reply": ai_reply})
+
+    except Exception as e:
+        print("AI Error:", e)
+        return jsonify({"reply": "Sorry bro, AI is not available right now 😅."})
