@@ -1,4 +1,4 @@
-from flask import Flask, request, Response, jsonify
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 from groq import Groq
 import json, os
@@ -42,15 +42,6 @@ Ask questions step by step.
 """
 
 TUTOR_MODES = {
-    "menu": """
-First, ask the student to choose one activity:
-1. Grammar practice
-2. Vocabulary
-3. Sentence correction
-4. Conversation practice
-
-Only ask this question. Do not explain yet.
-""",
     "grammar": "Focus on grammar questions. Use multiple choice or fill-in-the-blank.",
     "vocabulary": "Ask vocabulary questions and usage in sentences.",
     "sentence": "Ask the student to correct incorrect sentences.",
@@ -65,22 +56,21 @@ def home():
     return "ChatPTK English Tutor is running 🚀"
 
 # ------------------
-# CHAT (MAIN)
+# CHAT ROUTE
 # ------------------
 @app.route("/chat", methods=["POST"])
 def chat():
     data = request.get_json(silent=True) or {}
 
     user_msg = data.get("message", "").strip()
-    tutor_mode = data.get("mode", "menu")  # default = question-first
-    student_id = "STU001"  # demo mode
-
-    if not user_msg and tutor_mode != "menu":
-        return jsonify({"error": "Empty message"}), 400
+    tutor_mode = data.get("mode", "menu")  # default = menu
+    student_id = data.get("student_id", "STU001")  # demo mode
 
     student = get_student(student_id)
 
-    # 🔐 Student-based responses (example)
+    # ------------------
+    # STUDENT INFO RESPONSES
+    # ------------------
     if student and user_msg:
         msg_lower = user_msg.lower()
         if "balance" in msg_lower:
@@ -88,20 +78,40 @@ def chat():
         if "name" in msg_lower:
             return jsonify({"reply": f"You are {student['first_name']} {student['last_name']}."})
 
-    # 🛡️ Content filter
+    # ------------------
+    # CONTENT FILTER
+    # ------------------
     masked = marites(user_msg)
     if masked:
         return jsonify({"reply": masked})
 
-    # 🧠 BUILD SYSTEM PROMPT
+    # ------------------
+    # MENU MODE
+    # ------------------
+    if tutor_mode == "menu":
+        return jsonify({
+            "reply": "Please choose one activity:\n1. Grammar practice\n2. Vocabulary\n3. Sentence correction\n4. Conversation practice"
+        })
+
+    # ------------------
+    # CHECK EMPTY MESSAGE
+    # ------------------
+    if not user_msg:
+        return jsonify({"error": "Empty message"}), 400
+
+    # ------------------
+    # AI PROMPT
+    # ------------------
     system_prompt = BASE_TUTOR_PROMPT + TUTOR_MODES.get(tutor_mode, "")
 
-    messages = [{"role": "system", "content": system_prompt}]
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_msg}
+    ]
 
-    if tutor_mode != "menu":
-        messages.append({"role": "user", "content": user_msg})
-
-    # 🤖 AI RESPONSE
+    # ------------------
+    # AI RESPONSE
+    # ------------------
     response = client.chat.completions.create(
         model="llama-3.1-8b-instant",
         messages=messages,
@@ -111,3 +121,9 @@ def chat():
     return jsonify({
         "reply": response.choices[0].message.content
     })
+
+# ------------------
+# RUN APP
+# ------------------
+if __name__ == "__main__":
+    app.run(debug=True)
