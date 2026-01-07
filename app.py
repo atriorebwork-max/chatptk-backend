@@ -70,17 +70,13 @@ Keep it friendly and clear.
 # ------------------
 # ROUTES
 # ------------------
-@app.route("/")
-def home():
-    return "ChatPTK English Tutor is running 🚀"
-
-# ------------------
-# CHAT ROUTE
-# ------------------
 @app.route("/chat", methods=["POST"])
 def chat():
     data = request.get_json(silent=True) or {}
 
+    # ------------------
+    # EXTRACT DATA
+    # ------------------
     user_msg = data.get("message", "").strip()
     tutor_mode = data.get("mode", "menu")  # default = menu
     student_id = data.get("student_id", "STU001")  # demo mode
@@ -113,10 +109,12 @@ def chat():
         })
 
     # ------------------
-    # CHECK EMPTY MESSAGE
+    # HANDLE EMPTY USER MESSAGE
     # ------------------
+    # If switching from menu → activity and no user input yet,
+    # send a placeholder so AI knows to generate a question immediately
     if not user_msg:
-        return jsonify({"error": "Empty message"}), 400
+        user_msg = "Student wants to start the activity."
 
     # ------------------
     # AI PROMPT
@@ -140,9 +138,3 @@ def chat():
     return jsonify({
         "reply": response.choices[0].message.content
     })
-
-# ------------------
-# RUN APP
-# ------------------
-if __name__ == "__main__":
-    app.run(debug=True)
