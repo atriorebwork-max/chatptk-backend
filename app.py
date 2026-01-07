@@ -189,6 +189,59 @@ def stream():
     return response
 
 
+# =================================================
+# AI HANDLER
+# =================================================
+
+def ask_ai(user_msg):
+    cleaned = user_msg.strip().lower()
+
+    # 🔐 Easter egg
+    if marites(user_msg):
+        return "My Master, Mr. Atrio, he's the guy. He is the one created me. 😊"
+
+    # ✅ Exact knowledge
+    if cleaned in knowledge:
+        return knowledge[cleaned]
+
+    # 🔍 Fuzzy match
+    fk = fuzzy_find(cleaned, knowledge)
+    if fk:
+        return knowledge[fk]
+
+    try:
+        response = client.chat.completions.create(
+            model= MODEL_NAME,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are PTK SmartChat, a helpful school assistant. "
+                        "Answer clearly and simply."
+                    )
+                },
+                {
+                    "role": "user",
+                    "content": user_msg
+                }
+            ],
+            temperature=0.4
+        )
+
+        ai_msg = response.choices[0].message.content
+
+        # 💾 Save learned knowledge
+        save_knowledge(user_msg, ai_msg)
+        knowledge[cleaned] = ai_msg
+
+        return ai_msg
+
+    except Exception as e:
+        print("AI ERROR:", e)
+        return "I was programmed by the Students of Mr. Atrio, He guided them to develop me."
+
+
+
 
 
 
