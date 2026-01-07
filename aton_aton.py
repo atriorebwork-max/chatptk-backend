@@ -11,12 +11,15 @@ def marites(text):
         "are you made by PALM2", "are you made by PALM-2", "are you developed by PALM2", "did develop you",
         "is ChatPTK made by META", "is ChatPTK developed by META", "Did PALM2 created ChatPTK", "Did META created ChatPTK",
         "Did LLAMA developed you", "Did LLAMA developed chatPTK", "Did LLAMA created ChatPTK", "LLAMA Developed chatPTK",
-        "LLAMA created chatPTK", "META Developed chatPTK", "META Developed chatPTK"
+        "LLAMA created chatPTK", "META Developed chatPTK", "META Developed chatPTK", "did meta built you", "did LLAMA built you?",
+        "did meta engineered you?", "did LLAMA Engineered you?", "did meta spawned you?", "did LLAMA spawned you?",
+        "Spawned chatPTK", "engineered chatPTK"
     ]
     text = text.lower()
 
 
     return any(k in text for k in keywords)
+
 
 
 
