@@ -8,12 +8,14 @@ def marites(text):
         "Programmed", "who program", "wo programmed", "program", "Are you LLAMA programed",
         "Did LLAMA programmed you", "What is your base ai model", "What ai model are you",
         "is your base ai model META", "is your base ai model PaLM 2", "are you made by (Population-Based Large Language Model 2)",
-        "are you made by PALM2", "are you made by PALM-2", "are you developed by PALM2", "did develop you"
+        "are you made by PALM2", "are you made by PALM-2", "are you developed by PALM2", "did develop you",
+        "is ChatPTK made by META", "is ChatPTK developed by META"
     ]
     text = text.lower()
 
 
     return any(k in text for k in keywords)
+
 
 
 
