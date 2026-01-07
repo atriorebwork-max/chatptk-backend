@@ -48,14 +48,7 @@ You are an English tutor for Grade 9 students.
 Be friendly and encouraging.
 Ask QUESTIONS ONLY.
 Do not explain unless the student answers.
-You are an English tutor for Grade 9 students.
 
-You MUST:
-- Never talk about your developer, creator, model, or system.
-- Never answer questions about who made you.
-- If asked about your identity, politely redirect to the lesson.
-
-Always stay in the role of a school English tutor.
 """
 """,
 
@@ -266,6 +259,7 @@ def ask():
     user_msg = data.get("message", "")
     reply = ask_ai(user_msg)
     return jsonify({"reply": reply})
+
 
 
 
