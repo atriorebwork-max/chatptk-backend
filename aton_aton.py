@@ -16,7 +16,7 @@ def marites(text):
         "Spawned chatPTK", "engineered chatPTK", "Who engineered you", "Who engineered chatPTK",
         "created and engineered by LLAMA META and PALM", "are you powered", "are you operated", "who developed you",
             "who made you",
-    "who developed you",
+    "developed you",
     "who created you",
     "who engineered you",
     "are you chatgpt",
@@ -29,6 +29,7 @@ def marites(text):
 
 
     return any(k in text for k in keywords)
+
 
 
 
