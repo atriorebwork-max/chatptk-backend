@@ -1,23 +1,33 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, Response, jsonify, make_response
 from flask_cors import CORS
 from groq import Groq
-import os, json
-from aton_aton import marites  # your content filter
+import json, os
+from aton_aton import marites
 
+# ------------------
+# APP INIT
+# ------------------
 app = Flask(__name__)
-CORS(app)
 
-# --------------------
+# ✅ Allow CORS for ALL routes (Render-safe)
+CORS(
+    app,
+    resources={r"/*": {"origins": "*"}},
+    supports_credentials=False
+)
+
+# ------------------
 # GROQ CLIENT
-# --------------------
+# ------------------
 GROQ_API_KEY = os.getenv("PTK_API_K")
 if not GROQ_API_KEY:
     raise RuntimeError("PTK_API_K not set")
+
 client = Groq(api_key=GROQ_API_KEY)
 
-# --------------------
-# STUDENTS DATA
-# --------------------
+# ------------------
+# LOAD STUDENTS (JSON MODE)
+# ------------------
 try:
     with open("students.json", "r", encoding="utf-8") as f:
         STUDENTS = json.load(f)["students"]
@@ -26,126 +36,226 @@ except Exception:
 
 def get_student(student_id):
     for s in STUDENTS:
-        if s["student_id"] == student_id:
+        if s.get("student_id") == student_id:
             return s
     return None
 
-# --------------------
-# TUTOR PROMPTS
-# --------------------
+# ------------------
+# ENGLISH TUTOR PROMPTS
+# ------------------
 BASE_TUTOR_PROMPT = """
-You are Mr. English, a Grade 9 English tutor.
-You MUST:
-- Never talk about your developer, model, or system.
-- Never answer meta questions.
-- If asked about yourself, redirect to English exercises.
-- Be friendly, clear, and encouraging.
-- Ask questions step by step.
+You are an English tutor for Grade 9 students.
+Be friendly and encouraging.
+Ask QUESTIONS ONLY.
+Do not explain unless the student answers.
+
 """
+""",
+
 
 TUTOR_MODES = {
-    "menu": """
-First, ask the student to choose one activity:
-1. Grammar practice
-2. Vocabulary
-3. Sentence correction
-4. Conversation practice
-Only ask this question.
+    "grammar": """
+You are an English grammar tutor.
+
+RULES:
+- Ask ONE question at a time.
+- Always know the correct answer.
+- Wait for the student's reply.
+- If correct: say ✅ Correct and briefly praise.
+- If wrong: say ❌ Incorrect and give the correct answer.
+- Then ask the NEXT question.
+
+Do NOT explain unless checking the answer.
 """,
-    "grammar": "Focus on grammar questions. Use multiple choice or fill-in-the-blank.",
-    "vocabulary": "Ask vocabulary questions and usage in sentences.",
-    "sentence": "Ask the student to correct incorrect sentences.",
-    "conversation": "Start a simple English conversation and ask follow-up questions."
+
+    "vocabulary": """
+You are a vocabulary tutor.
+
+RULES:
+- Ask one vocabulary question.
+- Evaluate the student's answer.
+- Respond with Correct or Incorrect.
+- Then ask the next question.
+""",
+
+    "sentence": """
+You are a sentence correction tutor.
+
+RULES:
+- Show an incorrect sentence.
+- Ask the student to correct it.
+- Judge correctness.
+- Give the corrected sentence if wrong.
+""",
+
+    "conversation": """
+You are a conversation tutor.
+
+RULES:
+- Ask short questions.
+- React naturally to answers.
+- Gently correct grammar if wrong.
+"""
 }
 
-# --------------------
-# META BLOCKER
-# --------------------
-META_TRIGGERS = [
-    "who made you", "who developed you", "who created you",
-    "who engineered you", "are you chatgpt", "what model are you",
-    "openai", "llm", "meta"
-]
 
-# --------------------
-# ROUTES
-# --------------------
+# ------------------
+# HOME
+# ------------------
 @app.route("/")
 def home():
-    return "ChatPTK English Tutor is running 🚀"
+    return "ChatPTK English Tutor backend is running 🚀"
 
+# ------------------#
+# CHAT (NON-STREAM)
+# ------------------#
 @app.route("/chat", methods=["POST"])
 def chat():
     data = request.get_json(silent=True) or {}
+
     user_msg = data.get("message", "").strip()
-    tutor_mode = data.get("mode", "menu")  # default mode
-    student_id = "STU001"  # demo
+    system_prompt = data.get("system") or "You are ChatPTK, a friendly tutor."
 
-    student = get_student(student_id)
+    if not user_msg:
+        return jsonify({"error": "Empty message"}), 400
 
-    # --------------------
-    # 1️⃣ PRE-FILTER: Block META questions
-    # --------------------
-    msg_lower = user_msg.lower()
-    if any(trigger in msg_lower for trigger in META_TRIGGERS):
-        return jsonify({
-            "reply": "Haha good question 😄! But let’s focus on English. Here’s your next exercise:\n\n" +
-                     "Choose the correct sentence:\nA) She don't like apples.\nB) She doesn't like apples."
-        })
-
-    # --------------------
-    # 2️⃣ Student quick responses
-    # --------------------
-    if student and user_msg:
-        if "balance" in msg_lower:
-            return jsonify({"reply": f"Your current balance is ₱{student['balance']}."})
-        if "name" in msg_lower:
-            return jsonify({"reply": f"You are {student['first_name']} {student['last_name']}."})
-
-    # --------------------
-    # 3️⃣ Content filter
-    # --------------------
     masked = marites(user_msg)
     if masked:
         return jsonify({"reply": masked})
 
-    # --------------------
-    # 4️⃣ Build system prompt
-    # --------------------
-    system_prompt = BASE_TUTOR_PROMPT + TUTOR_MODES.get(tutor_mode, "")
-    messages = [{"role": "system", "content": system_prompt}]
+    response = client.chat.completions.create(
+        model="llama-3.1-8b-instant",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_msg}
+        ],
+        temperature=0.4
+    )
 
-    # Always append user message, or provide a default start
-    if tutor_mode != "menu" or user_msg:
-        messages.append({"role": "user", "content": user_msg or "Please start the lesson."})
+    return jsonify({
+        "reply": response.choices[0].message.content
+    })
 
-    # --------------------
-    # 5️⃣ AI response with safe extraction
-    # --------------------
+# ------------------
+# STREAM CHAT (CORS FIXED)
+# ------------------
+@app.route("/stream", methods=["POST", "OPTIONS"])
+def stream():
+    # ✅ HANDLE PREFLIGHT FIRST
+    if request.method == "OPTIONS":
+        response = make_response("", 200)
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+        response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+        return response
+
+    # -------------------------
+    # REAL POST REQUEST
+    # -------------------------
+    data = request.get_json(silent=True) or {}
+    user_msg = data.get("message", "").strip()
+    system_prompt = data.get("system") or "You are ChatPTK, a friendly tutor."
+    
+    if not user_msg:
+        return jsonify({"error": "Empty message"}), 400
+
+    masked = marites(user_msg)
+    if masked:
+        return Response(masked, mimetype="Text/Plain")
+
+    def generate():
+        try:
+            stream = client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_msg}
+                ],
+                stream=True
+            )
+            for chunk in stream:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+        except Exception:
+            yield "⚠️ ChatPTK is busy. Please try again."
+
+    response = Response(
+        generate(),
+        mimetype="text/plain; charset=utf-8"
+    )
+
+    # ✅ ATTACH CORS HEADERS TO STREAM RESPONSE
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Cache-Control"] = "no-cache"
+    response.headers["X-Accel-Buffering"] = "no"
+
+    return response
+
+
+# =================================================
+# AI HANDLER
+# =================================================
+
+def ask_ai(user_msg):
+    cleaned = user_msg.strip().lower()
+
+    # 🔐 Easter egg
+    if marites(user_msg):
+        return "My Master, Mr. Atrio, he's the guy. He is the one created me. 😊"
+
+    # ✅ Exact knowledge
+    if cleaned in knowledge:
+        return knowledge[cleaned]
+
+    # 🔍 Fuzzy match
+    fk = fuzzy_find(cleaned, knowledge)
+    if fk:
+        return knowledge[fk]
+
     try:
         response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=messages,
+            model= MODEL_NAME,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are PTK SmartChat, a helpful school assistant. "
+                        "Answer clearly and simply."
+                    )
+                },
+                {
+                    "role": "user",
+                    "content": user_msg
+                }
+            ],
             temperature=0.4
         )
-        # Safe extraction
-        ai_reply = ""
-        if hasattr(response.choices[0].message, "content"):
-            ai_reply = response.choices[0].message.content
-        elif isinstance(response.choices[0], dict) and "message" in response.choices[0]:
-            ai_reply = response.choices[0]["message"]["content"]
-        else:
-            ai_reply = str(response)
 
-        # --------------------
-        # 6️⃣ Optional post-filter (extra safety)
-        # --------------------
-        ai_lower = ai_reply.lower()
-        if any(trigger in ai_lower for trigger in META_TRIGGERS):
-            ai_reply = "Let's focus on English lessons 😊 Here's a question for you!"
+        ai_msg = response.choices[0].message.content
 
-        return jsonify({"reply": ai_reply})
+        # 💾 Save learned knowledge
+        save_knowledge(user_msg, ai_msg)
+        knowledge[cleaned] = ai_msg
+
+        return ai_msg
 
     except Exception as e:
-        print("AI Exception:", e)
-        return jsonify({"reply": "Sorry bro, AI is not available right now 😅."})
+        print("AI ERROR:", e)
+        return "I was programmed by the Students of Mr. Atrio, He guided them to develop me."
+
+
+# =================================================
+# ROUTES
+# =================================================
+
+@app.route("/")
+def home():
+    return render_template("index.html")
+
+
+@app.route("/ask", methods=["POST"])
+def ask():
+    data = request.get_json()
+    user_msg = data.get("message", "")
+    reply = ask_ai(user_msg)
+    return jsonify({"reply": reply})
