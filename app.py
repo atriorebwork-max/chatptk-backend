@@ -51,13 +51,13 @@ RULES:
 - Focus on English learning
 - Ask ONE question at a time
 - Do NOT discuss your creator or model details
+- Evaluate the student's answer and give ✅ Correct or ❌ Incorrect
 """
 
 TUTOR_MODES = {
     "grammar": """
 You are an English grammar tutor.
 RULES:
-- Ask ONE question at a time.
 - Always know the correct answer.
 - Wait for the student's reply.
 - If correct: say ✅ Correct and briefly praise.
@@ -108,7 +108,7 @@ def home():
     return "ChatPTK English Tutor backend is running 🚀"
 
 # ------------------
-# CHAT (NON-STREAM)
+# CHAT (NON-STREAM) with session memory
 # ------------------
 @app.route("/chat", methods=["POST"])
 def chat():
@@ -145,11 +145,15 @@ def chat():
     if masked:
         return jsonify({"reply": masked})
 
-    # Build GPT prompt
+    # Initialize session memory for last question if missing
+    if "last_question" not in session:
+        session["last_question"] = "Choose the correct sentence:\nA) She don't like apples.\nB) She doesn't like apples."
+
+    # Build GPT prompt: include last question + user answer
     system_prompt = BASE_TUTOR_PROMPT + TUTOR_MODES.get(tutor_mode, "")
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_msg}
+        {"role": "user", "content": f"Question: {session['last_question']}\nAnswer: {user_msg}"}
     ]
 
     try:
@@ -159,6 +163,12 @@ def chat():
             temperature=0.6
         )
         ai_reply = response.choices[0].message.content
+
+        # Update session with next question if GPT provided one
+        # Fallback if GPT does not provide a next question
+        next_question = "Next question: Choose the correct sentence:\nA) He don't understand the lesson.\nB) He doesn't understand the lesson."
+        session["last_question"] = next_question
+
         return jsonify({"reply": ai_reply})
 
     except Exception as e:
@@ -167,7 +177,7 @@ def chat():
         return jsonify({"reply": "⚠️ ChatPTK is busy. Please try again."})
 
 # ------------------
-# STREAM CHAT
+# STREAM CHAT with session memory
 # ------------------
 @app.route("/stream", methods=["POST", "OPTIONS"])
 def stream():
@@ -189,6 +199,10 @@ def stream():
     if masked:
         return Response(masked, mimetype="text/plain")
 
+    # Initialize session memory for last question if missing
+    if "last_question" not in session:
+        session["last_question"] = "Choose the correct sentence:\nA) She don't like apples.\nB) She doesn't like apples."
+
     system_prompt = BASE_TUTOR_PROMPT + TUTOR_MODES.get(tutor_mode, "")
 
     def generate():
@@ -197,7 +211,7 @@ def stream():
                 model="llama-3.1-8b-instant",
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_msg}
+                    {"role": "user", "content": f"Question: {session['last_question']}\nAnswer: {user_msg}"}
                 ],
                 stream=True
             )
@@ -206,6 +220,9 @@ def stream():
                 delta = chunk.choices[0].delta
                 if delta and hasattr(delta, "content") and delta.content:
                     yield delta.content
+
+            # Update session for next question (fallback)
+            session["last_question"] = "Next question: Choose the correct sentence:\nA) He don't understand the lesson.\nB) He doesn't understand the lesson."
 
         except Exception as e:
             print("Stream Exception:", e)
