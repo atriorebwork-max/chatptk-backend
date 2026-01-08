@@ -257,11 +257,11 @@ def stream():
                 ],
                 stream=True
             )
-            for chunk in stream_resp:
-                if hasattr(chunk.choices[0], "delta") and chunk.choices[0].delta:
-                    content = chunk.choices[0].delta.get("content")
-                    if content:
-                        yield content
+for chunk in stream_resp:
+    delta = chunk.choices[0].delta
+    if delta and hasattr(delta, "content") and delta.content:
+        yield delta.content
+
         except Exception as e:
             print("Stream Exception:", e)
             yield "⚠️ ChatPTK is busy. Please try again."
@@ -278,3 +278,4 @@ def stream():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
