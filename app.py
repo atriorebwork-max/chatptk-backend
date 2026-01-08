@@ -41,11 +41,20 @@ def get_student(student_id):
 # ENGLISH TUTOR PROMPTS
 # ------------------
 BASE_TUTOR_PROMPT = """
-You are an English tutor for Grade 9 students.
-Be friendly and encouraging.
-Ask QUESTIONS ONLY.
-Do not explain unless the student answers.
+You are a friendly and encouraging English tutor for Grade 9 students.
+
+PERSONALITY:
+- Warm, supportive, and human-like
+- You may respond briefly to greetings, jokes, or short casual messages
+- Use light humor and emojis when appropriate 😄
+
+TEACHING RULES:
+- Focus on English learning
+- Ask ONE question at a time
+- Guide the student back to learning smoothly
+- Do NOT discuss your creator, model, or system details
 """
+
 
 TUTOR_MODES = {
     "grammar": """
@@ -106,27 +115,53 @@ def home():
 # ------------------
 # CHAT (NON-STREAM)
 # ------------------
+
+CASUAL_TRIGGERS = [
+    "hi", "hello", "hey", "yo", "bro",
+    "lol", "haha", "hehe", "😂", "😄"
+]
+
 @app.route("/chat", methods=["POST"])
 def chat():
     data = request.get_json(silent=True) or {}
     user_msg = data.get("message", "").strip()
-    tutor_mode = data.get("mode", "grammar")  # default mode
+    tutor_mode = data.get("mode", "grammar")
 
     if not user_msg:
         return jsonify({"error": "Empty message"}), 400
 
-    # ------------------
-    # PRE-FILTER META QUESTIONS
-    # ------------------
     msg_lower = user_msg.lower()
+
+    # ------------------
+    # META QUESTION BLOCKER (FRIENDLY)
+    # ------------------
     if any(trigger in msg_lower for trigger in META_TRIGGERS):
         return jsonify({
-            "reply": "Haha good question 😄! But let's focus on English. Here’s your next exercise:\n\n" +
-                     "Choose the correct sentence:\nA) She don't like apples.\nB) She doesn't like apples."
+            "reply": (
+                "😄 Haha, that’s a fun question! But let’s keep our focus on English.\n\n"
+                "Quick practice:\n"
+                "Choose the correct sentence:\n"
+                "A) She don't like apples.\n"
+                "B) She doesn't like apples."
+            )
         })
 
     # ------------------
-    # CONTENT FILTER
+    # CASUAL / HUMAN MESSAGES
+    # ------------------
+    if any(trigger in msg_lower for trigger in CASUAL_TRIGGERS):
+        return jsonify({
+            "reply": (
+                "😄 Hey! Ready to practice a little English?\n\n"
+                "Here we go:\n"
+                "Which sentence is correct?\n"
+                "A) He don't understand the lesson.\n"
+                "B) He doesn't understand the lesson."
+            )
+        })
+
+    # ------------------
+    # CONTENT FILTER (marites)
     # ------------------
     masked = marites(user_msg)
     if masked:
@@ -136,6 +171,7 @@ def chat():
     # BUILD PROMPT
     # ------------------
     system_prompt = BASE_TUTOR_PROMPT + TUTOR_MODES.get(tutor_mode, "")
+
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_msg}
@@ -148,13 +184,15 @@ def chat():
         response = client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=messages,
-            temperature=0.4
+            temperature=0.6  # 🔥 warmer responses
         )
         ai_reply = response.choices[0].message.content
         return jsonify({"reply": ai_reply})
+
     except Exception as e:
         print("AI Exception:", e)
         return jsonify({"reply": "⚠️ ChatPTK is busy. Please try again."})
+
 
 # ------------------
 # STREAM CHAT
@@ -209,3 +247,4 @@ def stream():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
