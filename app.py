@@ -1,4 +1,4 @@
-from flask import Flask, request, Response, jsonify, make_response
+from flask import Flask, request, Response, jsonify, make_response, session
 from flask_cors import CORS
 from groq import Groq
 import json, os
@@ -8,11 +8,11 @@ from aton_aton import marites
 # APP INIT
 # ------------------
 app = Flask(__name__)
-CORS(
-    app,
-    resources={r"/*": {"origins": "*"}},
-    supports_credentials=False
-)
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=False)
+
+# Enable sessions
+app.secret_key = os.environ.get("FSK", "supersecretkey")
+app.config["SESSION_TYPE"] = "filesystem"
 
 # ------------------
 # GROQ CLIENT
@@ -55,27 +55,21 @@ TEACHING RULES:
 - Do NOT discuss your creator, model, or system details
 """
 
-
 TUTOR_MODES = {
     "grammar": """
 You are an English grammar tutor.
 
 RULES:
-- Ask ONE question at a time.
-- Always know the correct answer.
-- Wait for the student's reply.
-- If correct: say ✅ Correct and briefly praise.
-- If wrong: say ❌ Incorrect and give the correct answer.
-- Then ask the NEXT question.
+- The student will answer the question.
+- Evaluate their answer and respond: ✅ Correct or ❌ Incorrect with the correct answer.
+- Then ask the next question.
 """,
     "vocabulary": """
 You are a vocabulary tutor.
 
 RULES:
-- Ask one vocabulary question.
-- Evaluate the student's answer.
-- Respond with Correct or Incorrect.
-- Then ask the next question.
+- Evaluate the student's answer for correctness.
+- Respond with ✅ Correct or ❌ Incorrect, then ask the next vocabulary question.
 """,
     "sentence": """
 You are a sentence correction tutor.
@@ -83,26 +77,32 @@ You are a sentence correction tutor.
 RULES:
 - Show an incorrect sentence.
 - Ask the student to correct it.
-- Judge correctness.
-- Give the corrected sentence if wrong.
+- Judge correctness and provide the corrected sentence if wrong.
+- Then ask the next sentence question.
 """,
     "conversation": """
 You are a conversation tutor.
 
 RULES:
 - Ask short questions.
-- React naturally to answers.
-- Gently correct grammar if wrong.
+- Evaluate answers for grammar and clarity.
+- Respond naturally, gently correcting mistakes.
+- Then ask the next question.
 """
 }
 
 # ------------------
-# META BLOCKER
+# META & CASUAL TRIGGERS
 # ------------------
 META_TRIGGERS = [
     "who made you", "who developed you", "who created you", "who engineered you",
     "are you chatgpt", "what model are you", "openai", "llm", "meta",
     "tell me about yourself", "your creator", "your developer", "your engineer"
+]
+
+CASUAL_TRIGGERS = [
+    "hi", "hello", "hey", "yo", "bro",
+    "lol", "haha", "hehe", "😂", "😄"
 ]
 
 # ------------------
@@ -115,12 +115,6 @@ def home():
 # ------------------
 # CHAT (NON-STREAM)
 # ------------------
-
-CASUAL_TRIGGERS = [
-    "hi", "hello", "hey", "yo", "bro",
-    "lol", "haha", "hehe", "😂", "😄"
-]
-
 @app.route("/chat", methods=["POST"])
 def chat():
     data = request.get_json(silent=True) or {}
@@ -133,12 +127,12 @@ def chat():
     msg_lower = user_msg.lower()
 
     # ------------------
-    # META QUESTION BLOCKER (FRIENDLY)
+    # META BLOCKER
     # ------------------
     if any(trigger in msg_lower for trigger in META_TRIGGERS):
         return jsonify({
             "reply": (
-                "😄 Haha, that’s a fun question! But let’s keep our focus on English.\n\n"
+                "😄 Haha, that’s a fun question! But let’s focus on English.\n\n"
                 "Quick practice:\n"
                 "Choose the correct sentence:\n"
                 "A) She don't like apples.\n"
@@ -168,13 +162,28 @@ def chat():
         return jsonify({"reply": masked})
 
     # ------------------
-    # BUILD PROMPT
+    # LAST QUESTION TRACKING
+    # ------------------
+    last_question = session.get("last_question",
+        "Choose the correct sentence:\nA) She don't like apples.\nB) She doesn't like apples."
+    )
+
+    # ------------------
+    # BUILD SYSTEM PROMPT
     # ------------------
     system_prompt = BASE_TUTOR_PROMPT + TUTOR_MODES.get(tutor_mode, "")
 
+    # ------------------
+    # BUILD MESSAGES FOR AI
+    # ------------------
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_msg}
+        {"role": "user", "content": (
+            f"The student answered the last question:\n{last_question}\n"
+            f"Answer: {user_msg}\n"
+            "Evaluate the answer: respond ✅ Correct or ❌ Incorrect with the correct answer, "
+            "then ask the next question."
+        )}
     ]
 
     # ------------------
@@ -184,15 +193,25 @@ def chat():
         response = client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=messages,
-            temperature=0.6  # 🔥 warmer responses
+            temperature=0.6
         )
         ai_reply = response.choices[0].message.content
+
+        # ------------------
+        # EXTRACT NEXT QUESTION
+        # ------------------
+        # Heuristic: take last line ending with "?" as next question
+        next_question_lines = [line.strip() for line in ai_reply.split("\n") if line.strip().endswith("?")]
+        if next_question_lines:
+            session["last_question"] = next_question_lines[-1]
+        else:
+            session["last_question"] = last_question  # fallback
+
         return jsonify({"reply": ai_reply})
 
     except Exception as e:
         print("AI Exception:", e)
         return jsonify({"reply": "⚠️ ChatPTK is busy. Please try again."})
-
 
 # ------------------
 # STREAM CHAT
@@ -217,22 +236,34 @@ def stream():
     if masked:
         return Response(masked, mimetype="text/plain")
 
+    last_question = session.get("last_question",
+        "Choose the correct sentence:\nA) She don't like apples.\nB) She doesn't like apples."
+    )
+
     system_prompt = BASE_TUTOR_PROMPT + TUTOR_MODES.get(tutor_mode, "")
-    
+
     def generate():
         try:
-            stream = client.chat.completions.create(
+            stream_resp = client.chat.completions.create(
                 model="llama-3.1-8b-instant",
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_msg}
+                    {"role": "user", "content": (
+                        f"The student answered the last question:\n{last_question}\n"
+                        f"Answer: {user_msg}\n"
+                        "Evaluate the answer: respond ✅ Correct or ❌ Incorrect with the correct answer, "
+                        "then ask the next question."
+                    )}
                 ],
                 stream=True
             )
-            for chunk in stream:
-                if chunk.choices and chunk.choices[0].delta.content:
-                    yield chunk.choices[0].delta.content
-        except Exception:
+            for chunk in stream_resp:
+                if hasattr(chunk.choices[0], "delta") and chunk.choices[0].delta:
+                    content = chunk.choices[0].delta.get("content")
+                    if content:
+                        yield content
+        except Exception as e:
+            print("Stream Exception:", e)
             yield "⚠️ ChatPTK is busy. Please try again."
 
     response = Response(generate(), mimetype="text/plain; charset=utf-8")
@@ -242,9 +273,8 @@ def stream():
     return response
 
 # ------------------
-# RUN APP (Render-ready)
+# RUN APP
 # ------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-
