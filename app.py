@@ -2,7 +2,8 @@ from flask import Flask, request, Response, jsonify, make_response, session
 from flask_cors import CORS
 from groq import Groq
 import json, os, traceback
-from aton_aton import marites  # your content filter
+from aton_aton import marites  # content filter
+import re
 
 # ------------------
 # APP INIT
@@ -38,51 +39,47 @@ def get_student(student_id):
     return None
 
 # ------------------
+# UTILS
+# ------------------
+def strip_html(text):
+    return re.sub(r'<.*?>', '', text)
+
+# ------------------
 # PROMPTS & MODES
 # ------------------
 BASE_TUTOR_PROMPT = """
-You are a friendly and encouraging English tutor for Grade 9 students.
-
-PERSONALITY:
-- Warm, supportive, human-like
-- Respond to casual messages with light humor 😄
-
-RULES:
-- Focus on English learning
+You are a friendly English tutor for Grade 9 students.
+- Always respond in plain text (no HTML, no markdown)
+- Use emojis 😄 only in plain text
+- Evaluate the student's answer: ✅ Correct or ❌ Incorrect
 - Ask ONE question at a time
-- Do NOT discuss your creator or model details
-- Evaluate the student's answer and give ✅ Correct or ❌ Incorrect
+- Guide the student smoothly back to learning
+- Do NOT discuss your creator, model, or system details
 """
 
 TUTOR_MODES = {
     "grammar": """
-You are an English grammar tutor.
-RULES:
-- Always know the correct answer.
+You are a grammar tutor.
+- Ask ONE question at a time.
+- Know the correct answer.
 - Wait for the student's reply.
-- If correct: say ✅ Correct and briefly praise.
-- If wrong: say ❌ Incorrect and give the correct answer.
-- Then ask the NEXT question.
+- Give ✅ Correct if right, ❌ Incorrect + correct answer if wrong.
 """,
     "vocabulary": """
 You are a vocabulary tutor.
-RULES:
-- Ask one vocabulary question.
+- Ask ONE question at a time.
 - Evaluate the student's answer.
-- Respond with Correct or Incorrect.
-- Then ask the next question.
+- Give ✅ Correct or ❌ Incorrect.
 """,
     "sentence": """
 You are a sentence correction tutor.
-RULES:
 - Show an incorrect sentence.
-- Ask the student to correct it.
+- Ask student to correct it.
 - Judge correctness.
 - Give the corrected sentence if wrong.
 """,
     "conversation": """
 You are a conversation tutor.
-RULES:
 - Ask short questions.
 - React naturally to answers.
 - Gently correct grammar if wrong.
@@ -108,7 +105,7 @@ def home():
     return "ChatPTK English Tutor backend is running 🚀"
 
 # ------------------
-# CHAT (NON-STREAM) with session memory
+# CHAT (NON-STREAM)
 # ------------------
 @app.route("/chat", methods=["POST"])
 def chat():
@@ -145,15 +142,20 @@ def chat():
     if masked:
         return jsonify({"reply": masked})
 
-    # Initialize session memory for last question if missing
+    # Initialize session memory
     if "last_question" not in session:
         session["last_question"] = "Choose the correct sentence:\nA) She don't like apples.\nB) She doesn't like apples."
+        session["expected_answer"] = "She doesn't like apples."
 
-    # Build GPT prompt: include last question + user answer
+    # Build GPT prompt including last question + expected answer
     system_prompt = BASE_TUTOR_PROMPT + TUTOR_MODES.get(tutor_mode, "")
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": f"Question: {session['last_question']}\nAnswer: {user_msg}"}
+        {"role": "user", "content": (
+            f"Previous question: {session['last_question']}\n"
+            f"Expected answer: {session['expected_answer']}\n"
+            f"Student answer: {user_msg}"
+        )}
     ]
 
     try:
@@ -162,22 +164,21 @@ def chat():
             messages=messages,
             temperature=0.6
         )
-        ai_reply = response.choices[0].message.content
+        ai_reply = strip_html(response.choices[0].message.content)
 
-        # Update session with next question if GPT provided one
-        # Fallback if GPT does not provide a next question
-        next_question = "Next question: Choose the correct sentence:\nA) He don't understand the lesson.\nB) He doesn't understand the lesson."
-        session["last_question"] = next_question
+        # Update session with next question
+        session["last_question"] = "Next question: Choose the correct sentence:\nA) He don't understand the lesson.\nB) He doesn't understand the lesson."
+        session["expected_answer"] = "He doesn't understand the lesson."
 
         return jsonify({"reply": ai_reply})
 
     except Exception as e:
         print("AI Exception:", e)
         traceback.print_exc()
-        return jsonify({"reply": "⚠️ ChatPTK is busy. Please try again."})
+        return jsonify({"reply": "⚠️ PTK Tutor failed to start. Please try again."})
 
 # ------------------
-# STREAM CHAT with session memory
+# STREAM CHAT
 # ------------------
 @app.route("/stream", methods=["POST", "OPTIONS"])
 def stream():
@@ -199,9 +200,10 @@ def stream():
     if masked:
         return Response(masked, mimetype="text/plain")
 
-    # Initialize session memory for last question if missing
+    # Initialize session memory
     if "last_question" not in session:
         session["last_question"] = "Choose the correct sentence:\nA) She don't like apples.\nB) She doesn't like apples."
+        session["expected_answer"] = "She doesn't like apples."
 
     system_prompt = BASE_TUTOR_PROMPT + TUTOR_MODES.get(tutor_mode, "")
 
@@ -211,7 +213,11 @@ def stream():
                 model="llama-3.1-8b-instant",
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Question: {session['last_question']}\nAnswer: {user_msg}"}
+                    {"role": "user", "content": (
+                        f"Previous question: {session['last_question']}\n"
+                        f"Expected answer: {session['expected_answer']}\n"
+                        f"Student answer: {user_msg}"
+                    )}
                 ],
                 stream=True
             )
@@ -219,15 +225,16 @@ def stream():
             for chunk in stream_resp:
                 delta = chunk.choices[0].delta
                 if delta and hasattr(delta, "content") and delta.content:
-                    yield delta.content
+                    yield strip_html(delta.content)
 
             # Update session for next question (fallback)
             session["last_question"] = "Next question: Choose the correct sentence:\nA) He don't understand the lesson.\nB) He doesn't understand the lesson."
+            session["expected_answer"] = "He doesn't understand the lesson."
 
         except Exception as e:
             print("Stream Exception:", e)
             traceback.print_exc()
-            yield "⚠️ ChatPTK is busy. Please try again."
+            yield "⚠️ PTK Tutor failed to start. Please try again."
 
     response = Response(generate(), mimetype="text/plain; charset=utf-8")
     response.headers["Access-Control-Allow-Origin"] = "*"
