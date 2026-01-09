@@ -1,251 +1,170 @@
-from flask import Flask, request, Response, jsonify, make_response, session
+from flask import Flask, request, Response, jsonify
 from flask_cors import CORS
 from groq import Groq
-import json, os, traceback
-from aton_aton import marites  # content filter
-import re
+import json, os
+from aton_aton import marites
 
-# ------------------
-# APP INIT
-# ------------------
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
-
-# Secret key for Flask sessions
-app.secret_key = os.environ.get("FSK")
-app.config["SESSION_TYPE"] = "filesystem"
+CORS(
+    app,
+    resources={
+        r"/stream": {
+            "origins": [
+                "https://ptkaizone.com",
+                "https://www.ptkaizone.com",
+                "https://z259914-y016nt.ls03.zwhhosting.com"
+            ]
+        }
+    }
+)
 
 # ------------------
 # GROQ CLIENT
 # ------------------
-GROQ_API_KEY = os.environ.get("PTK_API_K")
+GROQ_API_KEY = os.getenv("PTK_API_K")
 if not GROQ_API_KEY:
     raise RuntimeError("PTK_API_K not set")
+
 client = Groq(api_key=GROQ_API_KEY)
 
 # ------------------
-# LOAD STUDENTS
+# LOAD KNOWLEDGE
+# ------------------
+try:
+    with open("knowledge.json", "r", encoding="utf-8") as f:
+        KNOWLEDGE = json.load(f)["lessons"]
+except Exception:
+    KNOWLEDGE = []
+
+# ------------------
+# LOAD STUDENTS (JSON)
 # ------------------
 try:
     with open("students.json", "r", encoding="utf-8") as f:
-        STUDENTS = json.load(f).get("students", [])
+        STUDENTS = json.load(f)["students"]
 except Exception:
     STUDENTS = []
 
+# ------------------
+# HELPER: FIND STUDENT
+# ------------------
 def get_student(student_id):
     for s in STUDENTS:
-        if s.get("student_id") == student_id:
+        if s["student_id"] == student_id:
             return s
     return None
 
 # ------------------
-# UTILS
-# ------------------
-def strip_html(text):
-    return re.sub(r'<.*?>', '', text)
-
-# ------------------
-# PROMPTS & MODES
-# ------------------
-BASE_TUTOR_PROMPT = """
-You are a friendly English tutor for Grade 9 students.
-- Always respond in plain text (no HTML, no markdown)
-- Use emojis 😄 only in plain text
-- Evaluate the student's answer: ✅ Correct or ❌ Incorrect
-- Ask ONE question at a time
-- Guide the student smoothly back to learning
-- Do NOT discuss your creator, model, or system details
-"""
-
-TUTOR_MODES = {
-    "grammar": """
-You are a grammar tutor.
-- Ask ONE question at a time.
-- Know the correct answer.
-- Wait for the student's reply.
-- Give ✅ Correct if right, ❌ Incorrect + correct answer if wrong.
-""",
-    "vocabulary": """
-You are a vocabulary tutor.
-- Ask ONE question at a time.
-- Evaluate the student's answer.
-- Give ✅ Correct or ❌ Incorrect.
-""",
-    "sentence": """
-You are a sentence correction tutor.
-- Show an incorrect sentence.
-- Ask student to correct it.
-- Judge correctness.
-- Give the corrected sentence if wrong.
-""",
-    "conversation": """
-You are a conversation tutor.
-- Ask short questions.
-- React naturally to answers.
-- Gently correct grammar if wrong.
-"""
-}
-
-META_TRIGGERS = [
-    "who made you", "who developed you", "who created you", "who engineered you",
-    "are you chatgpt", "what model are you", "openai", "llm", "meta",
-    "tell me about yourself", "your creator", "your developer", "your engineer"
-]
-
-CASUAL_TRIGGERS = [
-    "hi", "hello", "hey", "yo", "bro",
-    "lol", "haha", "hehe", "😂", "😄"
-]
-
-# ------------------
-# HOME
+# ROUTES
 # ------------------
 @app.route("/")
 def home():
-    return "ChatPTK English Tutor backend is running 🚀"
+    return "ChatPTK backend (JSON mode) is running 🚀"
 
 # ------------------
-# CHAT (NON-STREAM)
+# STREAM CHAT
+# ------------------
+@app.route("/stream", methods=["POST"])
+def stream():
+    data = request.get_json(silent=True) or {}
+    user_msg = data.get("message", "").strip()
+
+    if not user_msg:
+        return jsonify({"error": "Empty message"}), 400
+
+    masked = marites(user_msg)
+    if masked:
+        return Response(masked, mimetype="text/plain; charset=utf-8")
+
+    # 🔐 TEMP: HARD-CODE STUDENT (FOR DEMO)
+    student_id = "STU001"
+    student = get_student(student_id)
+
+    # 🎯 INTERCEPT STUDENT QUESTIONS
+    msg_lower = user_msg.lower()
+
+    if student and "balance" in msg_lower:
+        reply = f"Your current balance is ₱{student['balance']}."
+        return Response(reply, mimetype="text/plain; charset=utf-8")
+
+    if student and "name" in msg_lower:
+        reply = f"You are {student['first_name']} {student['last_name']}."
+        return Response(reply, mimetype="text/plain; charset=utf-8")
+
+    # 🤖 FALLBACK TO AI
+    system_prompt = "You are ChatPTK, a friendly tutor."
+
+    def generate():
+        try:
+            stream = client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_msg}
+                ],
+                stream=True
+            )
+            for chunk in stream:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+        except Exception:
+            yield "⚠️ ChatPTK is busy. Please try again."
+
+    return Response(
+        generate(),
+        mimetype="text/plain; charset=utf-8",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+# ------------------
+# NORMAL CHAT (NON-STREAM)
 # ------------------
 @app.route("/chat", methods=["POST"])
 def chat():
     data = request.get_json(silent=True) or {}
     user_msg = data.get("message", "").strip()
-    tutor_mode = data.get("mode", "grammar")
 
     if not user_msg:
         return jsonify({"error": "Empty message"}), 400
 
-    msg_lower = user_msg.lower()
-
-    # META question blocker
-    if any(trigger in msg_lower for trigger in META_TRIGGERS):
-        return jsonify({"reply": (
-            "😄 Haha, fun question! But let's focus on English.\n\n"
-            "Quick practice:\n"
-            "Choose the correct sentence:\n"
-            "A) She don't like apples.\n"
-            "B) She doesn't like apples."
-        )})
-
-    # Casual human messages
-    if any(trigger in msg_lower for trigger in CASUAL_TRIGGERS):
-        return jsonify({"reply": (
-            "😄 Hey! Ready to practice a little English?\n\n"
-            "Which sentence is correct?\n"
-            "A) He don't understand the lesson.\n"
-            "B) He doesn't understand the lesson."
-        )})
-
-    # Content filter
     masked = marites(user_msg)
     if masked:
         return jsonify({"reply": masked})
 
-    # Initialize session memory
-    if "last_question" not in session:
-        session["last_question"] = "Choose the correct sentence:\nA) She don't like apples.\nB) She doesn't like apples."
-        session["expected_answer"] = "She doesn't like apples."
+    # 🔐 TEMP STUDENT
+    student_id = "STU001"
+    student = get_student(student_id)
 
-    # Build GPT prompt including last question + expected answer
-    system_prompt = BASE_TUTOR_PROMPT + TUTOR_MODES.get(tutor_mode, "")
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": (
-            f"Previous question: {session['last_question']}\n"
-            f"Expected answer: {session['expected_answer']}\n"
-            f"Student answer: {user_msg}"
-        )}
-    ]
+    msg_lower = user_msg.lower()
 
-    try:
-        response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=messages,
-            temperature=0.6
-        )
-        ai_reply = strip_html(response.choices[0].message.content)
+    if student and "balance" in msg_lower:
+        return jsonify({
+            "reply": f"Your current balance is ₱{student['balance']}."
+        })
 
-        # Update session with next question
-        session["last_question"] = "Next question: Choose the correct sentence:\nA) He don't understand the lesson.\nB) He doesn't understand the lesson."
-        session["expected_answer"] = "He doesn't understand the lesson."
+    if student and "name" in msg_lower:
+        return jsonify({
+            "reply": f"You are {student['first_name']} {student['last_name']}."
+        })
 
-        return jsonify({"reply": ai_reply})
+    # 🤖 AI fallback
+    system_prompt = "You are ChatPTK, a friendly tutor."
 
-    except Exception as e:
-        print("AI Exception:", e)
-        traceback.print_exc()
-        return jsonify({"reply": "⚠️ PTK Tutor failed to start. Please try again."})
+    response = client.chat.completions.create(
+        model="llama-3.1-8b-instant",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_msg}
+        ],
+        temperature=0.4
+    )
 
-# ------------------
-# STREAM CHAT
-# ------------------
-@app.route("/stream", methods=["POST", "OPTIONS"])
-def stream():
-    if request.method == "OPTIONS":
-        response = make_response("", 200)
-        response.headers["Access-Control-Allow-Origin"] = "*"
-        response.headers["Access-Control-Allow-Headers"] = "Content-Type"
-        response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
-        return response
+    return jsonify({
+        "reply": response.choices[0].message.content
+    })
 
-    data = request.get_json(silent=True) or {}
-    user_msg = data.get("message", "").strip()
-    tutor_mode = data.get("mode", "grammar")
 
-    if not user_msg:
-        return jsonify({"error": "Empty message"}), 400
-
-    masked = marites(user_msg)
-    if masked:
-        return Response(masked, mimetype="text/plain")
-
-    # Initialize session memory
-    if "last_question" not in session:
-        session["last_question"] = "Choose the correct sentence:\nA) She don't like apples.\nB) She doesn't like apples."
-        session["expected_answer"] = "She doesn't like apples."
-
-    system_prompt = BASE_TUTOR_PROMPT + TUTOR_MODES.get(tutor_mode, "")
-
-    def generate():
-        try:
-            stream_resp = client.chat.completions.create(
-                model="llama-3.1-8b-instant",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": (
-                        f"Previous question: {session['last_question']}\n"
-                        f"Expected answer: {session['expected_answer']}\n"
-                        f"Student answer: {user_msg}"
-                    )}
-                ],
-                stream=True
-            )
-
-            for chunk in stream_resp:
-                delta = chunk.choices[0].delta
-                if delta and hasattr(delta, "content") and delta.content:
-                    yield strip_html(delta.content)
-
-            # Update session for next question (fallback)
-            session["last_question"] = "Next question: Choose the correct sentence:\nA) He don't understand the lesson.\nB) He doesn't understand the lesson."
-            session["expected_answer"] = "He doesn't understand the lesson."
-
-        except Exception as e:
-            print("Stream Exception:", e)
-            traceback.print_exc()
-            yield "⚠️ PTK Tutor failed to start. Please try again."
-
-    response = Response(generate(), mimetype="text/plain; charset=utf-8")
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Cache-Control"] = "no-cache"
-    response.headers["X-Accel-Buffering"] = "no"
-    return response
-
-# ------------------
-# RUN APP
-# ------------------
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
 
